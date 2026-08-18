@@ -1,0 +1,16 @@
+bug:
+  - '.*bug.*'
+  - '.*fix.*'
+  - '.*broken.*'
+
+feature:
+  - '.*feat.*'
+  - '.*feature.*'
+  - '.*enhancement.*'
+
+documentation:
+  - '.*doc.*'
+  - '.*readme.*'
+
+research:
+  - '.*research.*'
