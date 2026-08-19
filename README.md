@@ -6,6 +6,15 @@ The north star is a "5 a.m. newspaper in the driveway": open the terminal and ge
 
 This is a personal project built for one user. The data sources are personal; the patterns — narrow multi-agent orchestration, a local analytics warehouse decoupled from source APIs, sandboxed code execution, an allowlisted shell — are the reusable part, and the reason it's public.
 
+## Contents
+
+- [What it does](#what-it-does)
+- [Architecture](#architecture)
+- [Stack](#stack)
+- [Repo layout](#repo-layout)
+- [Setup](#setup)
+- [Status & roadmap](#status--roadmap)
+
 ## What it does
 
 - **Talks to one orchestrator, fans out to many specialists.** [hermes.py](src/hermes/agents/hermes.py) has no domain knowledge of its own. Every capability is a tool that reads the database, runs a sync helper, or calls a single-purpose sub-agent — filesystem, Notion, Obsidian, morning briefing, sandboxed Python. Each sub-agent is too constrained to act outside its lane.
@@ -75,15 +84,46 @@ The two halves are decoupled on purpose. The **pipeline** is a scheduled writer;
 | [src/docker/](src/docker/) | The sandbox image for code execution |
 | [src/hermes/docs/](src/hermes/docs/) | Design notes and plans for in-flight work |
 
-## Getting started
+## Setup
 
-Full setup — prerequisites, Postgres, secrets, populating the warehouse, launching the CLI — lives in **[Onboarding.md](Onboarding.md)**. The short version:
+This is the happy path. The full walkthrough — the complete environment-variable table, the Infisical secrets option, and troubleshooting — is in **[Onboarding.md](Onboarding.md)**.
+
+**Prerequisites:** Python 3.12, [uv](https://docs.astral.sh/uv/), Postgres 16, and Docker (only needed for the code-execution sandbox). Accounts: GitHub (PAT with `repo` scope), Notion (internal integration), and [Ollama Cloud](https://ollama.com) for the default model. OpenAI, Resend, and Logfire are optional.
 
 ```bash
-uv sync                                 # Python 3.12 + Postgres 16 required first
-cp .env.example .env                     # fill in the values (see Onboarding.md)
-uv run python -m hermes.db.pipeline      # populate the warehouse
-uv run hermes chat                       # launch
+# 1. System prerequisites (macOS / Homebrew)
+brew install python@3.12 uv postgresql@16
+brew services start postgresql@16
+
+# 2. Create the warehouse. dlt's destination needs an explicit role,
+#    so create a `postgres` superuser alongside the database.
+createdb hermes
+psql -d hermes -c "CREATE ROLE postgres WITH LOGIN SUPERUSER PASSWORD 'postgres';"
+
+# 3. Install dependencies (reads uv.lock — there is no requirements.txt)
+uv sync
+
+# 4. Configure secrets. Copy the template and fill in each value.
+cp .env.example .env
+#    DB_URL defaults to postgresql://postgres:postgres@localhost:5432/hermes
+#    GITHUB_PAT_TOKEN, NOTION_API_KEY (+ NOTION_DATABASE_ID / NOTION_DATASOURCE_ID),
+#    OLLAMA_API_KEY, and the OBSIDIAN_*_PATH vars are the ones that matter.
+#    See the full table in Onboarding.md.
+
+# 5. Populate the warehouse (runs the three dlt pipelines back-to-back).
+#    First run is slow: GitHub endpoints paginate and the embedding model
+#    (~600 MB) downloads on first call.
+uv run python -m hermes.db.pipeline
+
+# 6. Launch
+uv run hermes chat
+```
+
+Verify a table landed before launching if you want a sanity check:
+
+```bash
+psql -d hermes -c "\dt github.*"
+psql -d hermes -c "select count(*) from notion.notion_tasks;"
 ```
 
 ## Status & roadmap
