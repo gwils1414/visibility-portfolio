@@ -58,7 +58,7 @@ uv sync
 
 ### 4. Configure secrets
 
-Secrets are managed via **[Infisical](https://infisical.com)** for this project — see [.infisical.json](.infisical.json) for the project binding. You have two options:
+Secrets are managed via **[Infisical](https://infisical.com)** for this project. You have two options:
 
 **Option A — Infisical (preferred).** Install the CLI (`brew install infisical/get-cli/infisical`), authenticate (`infisical login`), and run commands with secrets injected at runtime:
 
@@ -136,12 +136,12 @@ Built-in keywords at the prompt (not slash commands — they're matched before t
 | [src/hermes/mcps/](src/hermes/mcps/) | FastMCP servers exposed to sub-agents as MCP toolsets | [notion_mcp.py](src/hermes/mcps/notion_mcp.py) — currently the only one wired up |
 | [src/hermes/evals/](src/hermes/evals/) | Inline eval judge that runs after every response, plus a stubbed baseline-evals harness | [inline_evals.py](src/hermes/evals/inline_evals.py) |
 | [src/hermes/system_prompts/](src/hermes/system_prompts/), [src/hermes/instructions/](src/hermes/instructions/) | The actual text fed to each agent. Two-file split: "system prompt" is identity/role, "instructions" is behavior. Each sub-agent that has its own prompts (hermes, bash, pce, obsidian) gets a pair of files here. | Open whichever agent you're touching — they're plain Python returning long strings |
-| [src/hermes/docs/active/](src/hermes/docs/active/) | Working design docs the agent reads as context (Postgres decision, workflow brainstorms, recap layouts) | [postgres_portability.md](src/hermes/docs/active/postgres_portability.md), [posgres_transition.md](src/hermes/docs/active/posgres_transition.md) |
+| [src/hermes/docs/active/](src/hermes/docs/active/) | Working design docs the agent reads as context (Postgres decision, workflow brainstorms, recap layouts) | [postgres_portability.md](src/hermes/docs/active/postgres_portability.md), [posgres_transition.md](src/hermes/docs/archived/posgres_transition.md) |
 | [src/hermes/sandbox/](src/hermes/sandbox/) | Mount root for the PCE Docker container — source mounted read-only, `output/` writable. Generated charts/CSVs land here. | — |
 | [src/docker/](src/docker/) | Dockerfiles for the `python-sandbox` image (PCE) and the pipeline image. | [src/docker/pce/Dockerfile](src/docker/pce/Dockerfile) |
 | [src/config/paths.py](src/config/paths.py) | The lone non-env constant: `PROJ_ROOT`. Used by anything that needs a path relative to the repo root. | One line, but get the layering right |
 
-Files outside `src/` worth knowing about: [pyproject.toml](pyproject.toml) lists all runtime deps, [main.py](main.py) is a no-op stub (the real entry is the `hermes` script in `[project.scripts]`).
+Files outside `src/` worth knowing about: [pyproject.toml](pyproject.toml) lists all runtime deps; the `hermes` CLI entry point is defined by the `hermes` script in `[project.scripts]`.
 
 ---
 
@@ -190,7 +190,7 @@ This is "artificial narrow intelligence" by convention — each agent is too con
 
 **Data layer.** Source APIs (GitHub, Notion, the local Obsidian vault) are *not* hit on every chat turn. Instead, [db/pipeline.py](src/hermes/db/pipeline.py) runs three dlt sources daily — each writes into its own schema in the local `hermes` Postgres database. Tools like [query_commit_details](src/hermes/tools/query_github_stats.py#L7) and [query_notion_tasks](src/hermes/tools/query_notion_tasks.py#L6) then `pd.read_sql` from that warehouse. This decouples agent latency from upstream API rate limits and lets historical data accrue. The Obsidian embeddings pipeline is different in flavor — it embeds every markdown file's `description:` frontmatter using Qwen3-Embedding-0.6B locally and stores the vectors as JSONB. Semantic similarity at runtime is sklearn cosine over the unpacked vectors (see [obsidian_skills.py:53](src/hermes/tools/obsidian_skills.py#L53)). There is a TODO at [pipeline.py:131](src/hermes/db/pipeline.py#L131) to migrate to native `pgvector` columns once the extension is enabled.
 
-**Why Postgres and not DuckDB / SQLite.** This was DuckDB until recently. The rationale for moving is in [posgres_transition.md](src/hermes/docs/active/posgres_transition.md) — short version: DuckDB is OLAP (great for ad-hoc analytics, bad at frequent small writes), SQLite serializes writes, Postgres handles concurrent writers with row-level locking. The moment sub-agents fan out in parallel and each logs to short-term memory, the single-writer model breaks.
+**Why Postgres and not DuckDB / SQLite.** This was DuckDB until recently. The rationale for moving is in [posgres_transition.md](src/hermes/docs/archived/posgres_transition.md) — short version: DuckDB is OLAP (great for ad-hoc analytics, bad at frequent small writes), SQLite serializes writes, Postgres handles concurrent writers with row-level locking. The moment sub-agents fan out in parallel and each logs to short-term memory, the single-writer model breaks.
 
 ---
 

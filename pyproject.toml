@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "visibility"
 version = "0.1.0"
-description = "Add your description here"
+description = "Hermes — a personal CLI agent that ingests GitHub, Notion, and Obsidian signals into a local Postgres warehouse and drafts a morning briefing."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

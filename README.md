@@ -1,134 +1,98 @@
-# visibility
-This project is a placeholder for visibility into the ARI teams daily / weekly monthly contributions.
+# Hermes
 
-The goal is to scrape data from various places such as bd pulse activity , github commmits, PRs, lines changed, , issues closed, repos created and so on.
+A personal command-line agent that pulls your work signals — GitHub activity, Notion tasks, Obsidian notes — into a local warehouse and turns them into a morning briefing. You launch it with `hermes chat`, pick a model, and talk to it; behind the prompt a [pydantic-ai](https://ai.pydantic.dev) orchestrator delegates to a set of deliberately narrow sub-agents and queries a Postgres database that a nightly [dlt](https://dlthub.com) pipeline keeps fresh.
 
-The final deliverable will be a operating dlt/dbt pipeline , normalizing the activity and presenting is as an executive level dashboard to track work.
+The north star is a "5 a.m. newspaper in the driveway": open the terminal and get a single brief covering what happened yesterday, what's still outstanding, and where to start today — assembled from your own activity rather than a feed someone else curated. That brief exists; the wider arc toward a self-improving agent (persistent memory, inline evals, reflective fine-tuning) is in progress.
 
-Motivation:
-	- The motivation for this is not to build in the dark, and advice from 'the lean startup' to make sure in the early stages all of the contributions you are making are visible and transparent to those funding/ supporiting you
+This is a personal project built for one user. The data sources are personal; the patterns — narrow multi-agent orchestration, a local analytics warehouse decoupled from source APIs, sandboxed code execution, an allowlisted shell — are the reusable part, and the reason it's public.
 
- 
---Edit
+## What it does
 
-This may build into something else while keep the same original goal.
+- **Talks to one orchestrator, fans out to many specialists.** [hermes.py](src/hermes/agents/hermes.py) has no domain knowledge of its own. Every capability is a tool that reads the database, runs a sync helper, or calls a single-purpose sub-agent — filesystem, Notion, Obsidian, morning briefing, sandboxed Python. Each sub-agent is too constrained to act outside its lane.
+- **Keeps a local warehouse instead of hammering APIs.** [db/pipeline.py](src/hermes/db/pipeline.py) runs three dlt sources daily — GitHub stats, Notion tasks, Obsidian embeddings — each into its own Postgres schema. Chat turns query that warehouse, so agent latency is decoupled from upstream rate limits and history accrues over time.
+- **Grounds answers in your own notes.** Every Obsidian markdown file with a `description:` frontmatter field is embedded locally with Qwen3-Embedding-0.6B; retrieval at runtime is cosine similarity over the stored vectors.
+- **Scores itself as it goes.** Every response is judged inline by a small LLM-as-judge, and the scores render as colored 0–1 progress bars beneath the answer.
+- **Runs generated code in a locked-down sandbox.** The `pce_agent` writes Python and executes it inside a minimal Docker image ([src/docker/pce/Dockerfile](src/docker/pce/Dockerfile)) with source mounted read-only — this is how HTML briefings and charts get built.
+- **Shells out only through an allowlist.** The bash agent's one shell tool accepts a narrow set of `gh`/`git` sub-commands, scans every flag for blocked substrings, and gates each call on a human Yes/No prompt before anything runs.
 
-The stack:
-	- pydantic ai agent and typing
-	- bash tool
-	- resend tool
-	- python code execution in sandbox with docker for html generation
-	- notion mcp
-	- github statistics tool
-	- scheduling any deployment ?
-		- cron / side car / prefect
-	- can deploy to spare laptop
-	-duckdb for persistent storage
-	- *slack* for messaging
-	- *MODEL*:
-		- Options:
-			- personal gpt token without sharing data (mini models)
-			- may try a local model through ollama cloud such as openai-120b. 
-				- already have api keys for both of these
+## Architecture
 
-The idea is:
-	- pull github statistics from each of our repos every morning from the previous day
-		- issues @me / file changes / lines of code / PRs assigned to me
-	- pull tasks from notion via mcp / anything assigned to me
-		- ari tasks / personal tasks / AI ideas
+```
+                          ┌─────────────────────────────┐
+   User CLI prompt ─────► │  Hermes (orchestrator)      │
+                          │  hermes_agent in hermes.py  │
+                          └──────────────┬──────────────┘
+                                         │ delegates via @tool_plain
+   ┌──────────┬──────────┬───────────────┼───────────────┬──────────┬──────────┐
+   │          │          │               │               │          │          │
+┌──▼─────┐ ┌──▼─────┐ ┌──▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐ ┌─▼────────┐ │
+│ bash   │ │ notion │ │ obsidian│ │ morning     │ │ pce         │ │ spin_up_ │ │
+│ _agent │ │ _agent │ │ _agent  │ │ _briefing   │ │ _agent      │ │ sub_     │ │
+│ FS R/W │ │ MCP →  │ │ brain + │ │ GH + notion │ │ Python in   │ │ agent    │ │
+│ + gh   │ │ Notion │ │ memory  │ │ historical  │ │ docker      │ │ ad-hoc   │ │
+│ shell  │ │        │ │ CRUD    │ │ pulls       │ │ sandbox     │ │ research │ │
+└────────┘ └────────┘ └────┬────┘ └──────┬──────┘ └─────────────┘ └──────────┘ │
+                           │             │                                      │
+                           ▼             ▼                                      │
+                ┌──────────────────────────────────┐                            │
+                │  Postgres (db: hermes)            │ ◄──── call_short_term_   ─┘
+                │  schemas: github, notion,         │       memory + feedback
+                │  obsidian_embeddings,             │
+                │  short_term_memory, feedback      │
+                └──────────────▲────────────────────┘
+                               │ daily ingest
+                    ┌──────────┴──────────┐
+                    │   dlt pipelines     │
+                    │   db/pipeline.py    │
+                    └─────────────────────┘
+```
 
-Once the agent has the information build a '5 am newspaper in the driveway' as an HTML.
-	- For this i envision it laid out exxactly as the front page of a newspaper.
+The two halves are decoupled on purpose. The **pipeline** is a scheduled writer; the **agent** is a reader. Postgres sits between them because sub-agents fan out in parallel and each logs to short-term memory — a single-writer store (SQLite, DuckDB) serializes or breaks under that, whereas Postgres handles concurrent writers with row-level locking. The full reasoning, including the DuckDB→Postgres migration, is in [Onboarding.md](Onboarding.md#architecture).
 
-1. what happened yesterday
-2. what is outstanding 
-3. where to start today based on priority.
-4. it should pull ari tasks
+## Stack
 
+| Layer | Choice |
+|---|---|
+| Agent framework | pydantic-ai (orchestrator + typed sub-agents) |
+| Models | Ollama Cloud (`gpt-oss:120b`) by default; OpenAI optional via the model picker |
+| Ingestion | dlt sources → Postgres, run daily |
+| Warehouse | Postgres 16 (schemas per source) |
+| Embeddings | sentence-transformers, Qwen3-Embedding-0.6B, local |
+| Sandbox | Docker (`python-sandbox`), source mounted read-only |
+| CLI | Typer + Rich + prompt-toolkit |
+| Integrations | Notion (MCP), GitHub API, Resend, EDGAR |
+| Observability | Logfire (pydantic-ai instrumentation) |
 
+## Repo layout
 
-Will probably end up loading Notion and Github into sqlite daily , purging records once a month maybe.
-This could run into a dlt/dbt workflow
+| Path | What's there |
+|---|---|
+| [src/hermes/agents/](src/hermes/agents/) | The orchestrator and each single-purpose sub-agent |
+| [src/hermes/db/](src/hermes/db/) | dlt pipelines, warehouse connections, memory + feedback stores |
+| [src/hermes/tools/](src/hermes/tools/) | Tools the agents call — warehouse queries, the allowlisted shell, etc. |
+| [src/hermes/cli/](src/hermes/cli/) | The `hermes chat` loop, model picker, slash-command resolver |
+| [src/hermes/evals/](src/hermes/evals/) | Inline LLM-as-judge and baseline evals |
+| [src/docker/](src/docker/) | The sandbox image for code execution |
+| [src/hermes/docs/](src/hermes/docs/) | Design notes and plans for in-flight work |
 
-Meaning this will move from an agent tool to a cron job to load.
-Same for notion API.
-Agent will just do querying / summarizing and generating HTML
+## Getting started
 
-### Leaning toward prefect for scheduling.
+Full setup — prerequisites, Postgres, secrets, populating the warehouse, launching the CLI — lives in **[Onboarding.md](Onboarding.md)**. The short version:
 
+```bash
+uv sync                                 # Python 3.12 + Postgres 16 required first
+cp .env.example .env                     # fill in the values (see Onboarding.md)
+uv run python -m hermes.db.pipeline      # populate the warehouse
+uv run hermes chat                       # launch
+```
 
-NExt steps:
-- start with github api pulls -> dlt. Get that all working
-- move to notion
-- Could end up just putting all the tools here into an mcp , and connecting via claude desktop.
-- Add slack or resend notifications for pipeline observability
-- deploy via docker locally. Everything will go into the container.
+## Status & roadmap
 
+Working today: the CLI agent and its sub-agents, the daily dlt pipeline, Obsidian embedding retrieval, inline evals, the sandboxed code executor, and short-term memory. It runs locally against a personal Postgres instance.
 
-Wants:
-2. Workflow building
-	- morning brief will just become a workflow (made this a saved prompt/command)
-	- finance workflows: 13 week cash flow
-	- stock analysis pulling from APIs (vantage and so on)
-		- dbt pipeline ?
-	- PE research pipeline (market industry research , where companies are failing)
-		- specifially restructuring
-4. Local model github triage bot (replace current claude set up)
-	- !! see src/hermes/docs/active/claude_traige_bot.md
-5. Long Term Memory
-	- short term memory is there
-	- long term memory updates are there to be updated with /memory
-	- i think there is another level to this
-		- Long term memory is self updating
-		- prefect job for instruction updates
-6. Feedback Loop
-	- feedback is there and stored
-	- no current method set up for self improvement
-	- add pipeline for this
-7. How to incorporate network graphs
-	- agent can create / add nodes edges to a graph
-	- probably can just create a neo4j db and link the mcp
-10. Schedule workflows from the cli.(brainstorm this)
-	- /schedule-workflows
-	-cron jobs
-11. **Build Phx-Live View UI**
-	- launch with hermes -ui or dashboard
-	- view agents / workflows / analytics / audit trails
-	- how would the two link ?
-		- FastAPI into hermes
-		- Most everything else will be CRUD from postgres
-		- workflows will be realtime
-	- store them as seperate Repos ? or build phx liveview out in the UI folder here ?
-	- It is not as easy as just setting up a react front ned
-12. Set up full logging UI with logging.info to file / postgres
-	- use that datatable to show a logging UI
-	- logging file is set up , need to push to postgres
-14. Fine tune my own guardrail models on asus
-	- host on thinkcentre or locally.
-	- Practice hosting on AWS
-15. When we embed the skill descriptions , should also store name from the front matter. If not included in front matter it should be added for best practice.
-16. Create agents on demand from the cli
-	- could be via bash / filesystem to build it internally
-	- or we can move to a system where agent attributes are stored in postgres and we built them dynamically.
-17. Eventually fully move off of pydantic
-	- build from scratch
-	- API calls / Tool calls / returned results
-	- This is a lot of work
-		- we just want to remove dependencies
+Where it's headed:
 
-
-
-
-
-#How can we avoid:
-High barrier to entry for non-technical users
-Discovery is poor — you have to know what commands exist
-Error messages can be cryptic
-No visual feedback for complex state
-
-
-#full TUI:
-Terminal User Interface (TUI) that lives in your shell — it's not just a chat window bolted onto your editor
-
-
-goal of this is to do everything from the terminal , I dont want to switch between 200 apps a day.
+- **Self-improving loop** — long-term memory that updates itself, and a feedback pipeline that feeds reflective fine-tuning rather than just storing scores.
+- **Workflows from the CLI** — schedule recurring briefs and research jobs (13-week cash flow, PE/industry research) as first-class workflows.
+- **A Phoenix LiveView UI** — a dashboard over agents, workflows, analytics, and audit trails, so complex state has visual feedback the terminal can't give.
+- **Local guardrail models** — self-hosted PII and safety guardrails instead of relying on hosted checks.
