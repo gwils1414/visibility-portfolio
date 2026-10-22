@@ -1,0 +1,23 @@
+{
+  "alwaysThinkingEnabled": true,
+  "showThinkingSummaries": true,
+  "outputStyle": "Concise",
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/dlt pipeline *)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/review-loop.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
