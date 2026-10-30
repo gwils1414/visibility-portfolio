@@ -134,14 +134,13 @@ Built-in keywords at the prompt (not slash commands — they're matched before t
 | [src/hermes/tools/](src/hermes/tools/) | Implementations the agent tools wrap — DB queries, filesystem, Obsidian similarity + memory CRUD, the `gh` shell validator, the Python sandbox, sub-agent spawning | [obsidian_skills.py](src/hermes/tools/obsidian_skills.py) — semantic similarity over markdown frontmatter; [obsidian_memory.py](src/hermes/tools/obsidian_memory.py) — the memory-tier file CRUD |
 | [src/hermes/db/](src/hermes/db/) | dlt pipelines (`pipeline.py`), connection helpers, source-specific data classes, and the short-/long-term memory tables under [db/memory/](src/hermes/db/memory/) | [pipeline.py](src/hermes/db/pipeline.py) — the three pipelines + Prefect flow wrappers |
 | [src/hermes/mcps/](src/hermes/mcps/) | FastMCP servers exposed to sub-agents as MCP toolsets | [notion_mcp.py](src/hermes/mcps/notion_mcp.py) — currently the only one wired up |
-| [src/hermes/evals/](src/hermes/evals/) | Inline eval judge that runs after every response, plus a stubbed baseline-evals harness | [inline_evals.py](src/hermes/evals/inline_evals.py) |
+| [src/hermes/evals/](src/hermes/evals/) | Inline eval judge that runs after every response | [inline_evals.py](src/hermes/evals/inline_evals.py) |
 | [src/hermes/system_prompts/](src/hermes/system_prompts/), [src/hermes/instructions/](src/hermes/instructions/) | The actual text fed to each agent. Two-file split: "system prompt" is identity/role, "instructions" is behavior. Each sub-agent that has its own prompts (hermes, bash, pce, obsidian) gets a pair of files here. | Open whichever agent you're touching — they're plain Python returning long strings |
-| [src/hermes/docs/active/](src/hermes/docs/active/) | Working design docs the agent reads as context (Postgres decision, workflow brainstorms, recap layouts) | [postgres_portability.md](src/hermes/docs/active/postgres_portability.md), [posgres_transition.md](src/hermes/docs/archived/posgres_transition.md) |
 | [src/hermes/sandbox/](src/hermes/sandbox/) | Mount root for the PCE Docker container — source mounted read-only, `output/` writable. Generated charts/CSVs land here. | — |
 | [src/docker/](src/docker/) | Dockerfiles for the `python-sandbox` image (PCE) and the pipeline image. | [src/docker/pce/Dockerfile](src/docker/pce/Dockerfile) |
-| [src/config/paths.py](src/config/paths.py) | The lone non-env constant: `PROJ_ROOT`. Used by anything that needs a path relative to the repo root. | One line, but get the layering right |
+| [src/hermes/paths.py](src/hermes/paths.py) | The non-env constants: `PROJ_ROOT` (the `src/` directory) and `TODAY`. Used by anything that needs a path relative to the source root. | One line, but get the layering right |
 
-Files outside `src/` worth knowing about: [pyproject.toml](pyproject.toml) lists all runtime deps; the `hermes` CLI entry point is defined by the `hermes` script in `[project.scripts]`.
+Files outside `src/` worth knowing about: [pyproject.toml](pyproject.toml) lists runtime deps (pytest and ruff live in the `dev` group); the `hermes` CLI entry point is defined by the `hermes` script in `[project.scripts]`.
 
 ---
 
@@ -190,7 +189,7 @@ This is "artificial narrow intelligence" by convention — each agent is too con
 
 **Data layer.** Source APIs (GitHub, Notion, the local Obsidian vault) are *not* hit on every chat turn. Instead, [db/pipeline.py](src/hermes/db/pipeline.py) runs three dlt sources daily — each writes into its own schema in the local `hermes` Postgres database. Tools like [query_commit_details](src/hermes/tools/query_github_stats.py#L7) and [query_notion_tasks](src/hermes/tools/query_notion_tasks.py#L6) then `pd.read_sql` from that warehouse. This decouples agent latency from upstream API rate limits and lets historical data accrue. The Obsidian embeddings pipeline is different in flavor — it embeds every markdown file's `description:` frontmatter using Qwen3-Embedding-0.6B locally and stores the vectors as JSONB. Semantic similarity at runtime is sklearn cosine over the unpacked vectors (see [obsidian_skills.py:53](src/hermes/tools/obsidian_skills.py#L53)). There is a TODO at [pipeline.py:131](src/hermes/db/pipeline.py#L131) to migrate to native `pgvector` columns once the extension is enabled.
 
-**Why Postgres and not DuckDB / SQLite.** This was DuckDB until recently. The rationale for moving is in [posgres_transition.md](src/hermes/docs/archived/posgres_transition.md) — short version: DuckDB is OLAP (great for ad-hoc analytics, bad at frequent small writes), SQLite serializes writes, Postgres handles concurrent writers with row-level locking. The moment sub-agents fan out in parallel and each logs to short-term memory, the single-writer model breaks.
+**Why Postgres and not DuckDB / SQLite.** This was DuckDB until recently. Short version: DuckDB is OLAP (great for ad-hoc analytics, bad at frequent small writes), SQLite serializes writes, Postgres handles concurrent writers with row-level locking. The moment sub-agents fan out in parallel and each logs to short-term memory, the single-writer model breaks.
 
 ---
 
@@ -284,9 +283,9 @@ The model on the inline eval judge ([evals/inline_evals.py:12](src/hermes/evals/
 
 Three things fire around every assistant response, all written to Postgres:
 
-**Inline evals.** After the stream closes, [chat.py:305](src/hermes/cli/chat.py#L305) calls a judge model to score the response on two axes (`hallucination`, `factualness`, both 0–1). The scores render as colored progress bars in a panel under the response — green ≥0.8, yellow 0.5–0.8, red <0.5, thresholds at [chat.py:53](src/hermes/cli/chat.py#L53). Scores are *not* persisted yet; that lands when the reflective fine-tune loop is built ([reflective_feedback.md](src/hermes/docs/active/reflective_feedback.md)).
+**Inline evals.** After the stream closes, [chat.py:305](src/hermes/cli/chat.py#L305) calls a judge model to score the response on two axes (`hallucination`, `factualness`, both 0–1). The scores render as colored progress bars in a panel under the response — green ≥0.8, yellow 0.5–0.8, red <0.5, thresholds at [chat.py:53](src/hermes/cli/chat.py#L53). Scores are *not* persisted yet; that lands when the reflective fine-tune loop is built.
 
-**Short-term memory.** Each turn writes a row to the `short_term_memory` table — session UUID, user prompt, response, tool-call names, and the full message-history JSON ([chat.py:298](src/hermes/cli/chat.py#L298)). [ShortTermMemory](src/hermes/db/memory/short_term.py#L21) lives in its own schema so concurrent writes don't fight the warehouse tables. The plan in the file's tail comments: a weekly LLM-judge job reads these rows and distills durable preferences into `MEMORY/` files via the obsidian sub-agent — that's what `long_term.py` is the stub for.
+**Short-term memory.** Each turn writes a row to the `short_term_memory` table — session UUID, user prompt, response, tool-call names, and the full message-history JSON ([chat.py:298](src/hermes/cli/chat.py#L298)). [ShortTermMemory](src/hermes/db/memory/short_term.py#L21) lives in its own schema so concurrent writes don't fight the warehouse tables. The plan in the file's tail comments: a weekly LLM-judge job reads these rows and distills durable preferences into `MEMORY/` files via the obsidian sub-agent.
 
 **Feedback.** The `feedback` keyword at the prompt opens a 👍/👎 + freeform reason and writes to the `feedback` table via [Feedback.store_feedback](src/hermes/db/feedback.py#L55). Future work: a Prefect job reviews accumulated feedback and proposes instruction edits — design intent at the top of [db/feedback.py](src/hermes/db/feedback.py).
 
@@ -329,14 +328,14 @@ Worth knowing what to trust:
 | `spin_up_sub_agent` ad-hoc agents | Working |
 | Inline evals + progress bars | Working — not persisted yet |
 | Short-term memory | Working — writes each turn to the `short_term_memory` table ([db/memory/short_term.py](src/hermes/db/memory/short_term.py)); the `memory` keyword distills into `MEMORY/` files via the obsidian agent |
-| Long-term memory consolidation job | Not built — design at the top of [db/memory/long_term.py](src/hermes/db/memory/long_term.py) |
+| Long-term memory consolidation job | Not built |
 | Feedback (`feedback` keyword) | Working — 👍/👎 + reason persisted to the `feedback` table; the Prefect review-and-rewrite loop is the next step |
 | GitHub / Notion / Obsidian dlt pipelines | Working against Postgres |
 | `morning_briefing` agent | Tool functions work; system prompt + instructions are still empty strings ([morning_briefing.py:26-27](src/hermes/agents/morning_briefing.py#L26)). Runs but won't behave purposefully until written. |
 | `notion_sub_agent` prompts | Same issue as `morning_briefing` — empty strings at [notion_sub_agent.py:32-33](src/hermes/agents/notion_sub_agent.py#L32). |
-| HTML "newspaper" morning brief | Not built. Layout sketch in [morning_recap_newspaper_detailed.html](src/hermes/docs/active/morning_recap_newspaper_detailed.html). |
+| HTML "newspaper" morning brief | Not built |
 | Resend email tool | Placeholder at [tools/resend.py](src/hermes/tools/resend.py) |
-| Workflow execution | Empty file at [tools/workflows.py](src/hermes/tools/workflows.py); design in [workflows_plan.md](src/hermes/docs/active/workflows_plan.md) |
+| Workflow execution | Not built |
 | `workflows` keyword in the CLI | Reserved — the keyword exists in the banner but isn't wired to a handler yet |
 
 ---

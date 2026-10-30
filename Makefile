@@ -1,10 +1,10 @@
 #precommit checks
 #make ruff, make lint # make format
-.PHONY: format lint check run install
+.PHONY: test format lint
 
 
 test:
-    uv run pytest
+	uv run pytest
 
 
 format:

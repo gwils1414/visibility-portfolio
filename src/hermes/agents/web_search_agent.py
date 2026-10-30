@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 console = Console()
-from config.paths import PROJ_ROOT
+from hermes.paths import PROJ_ROOT
 deps = Settings()
 #single WebSearch() instance so validators / state are constructed once per process
 _web_search = WebSearch()

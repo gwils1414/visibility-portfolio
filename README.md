@@ -82,7 +82,6 @@ The two halves are decoupled on purpose. The **pipeline** is a scheduled writer;
 | [src/hermes/cli/](src/hermes/cli/) | The `hermes chat` loop, model picker, slash-command resolver |
 | [src/hermes/evals/](src/hermes/evals/) | Inline LLM-as-judge and baseline evals |
 | [src/docker/](src/docker/) | The sandbox image for code execution |
-| [src/hermes/docs/](src/hermes/docs/) | Design notes and plans for in-flight work |
 
 ## Setup
 

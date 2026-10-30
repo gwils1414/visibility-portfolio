@@ -1,4 +1,4 @@
-from config.paths import TODAY
+from hermes.paths import TODAY
 
 import logging
 logger = logging.getLogger(__name__)

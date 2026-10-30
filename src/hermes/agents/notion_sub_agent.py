@@ -14,7 +14,7 @@ from hermes.instructions.hermes_instructions import get_hermes_instructions
 from pydantic_ai.mcp import MCPToolset
 from hermes.mcps.notion_mcp import NotionMCP
 import fastmcp
-from config.paths import PROJ_ROOT
+from hermes.paths import PROJ_ROOT
 
 import logging
 logger = logging.getLogger(__name__)

@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 console = Console()
-from config.paths import PROJ_ROOT
+from hermes.paths import PROJ_ROOT
 deps = Settings()
 
 #single Bash() instance so the gh repo allowlist is fetched once per process

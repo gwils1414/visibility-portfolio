@@ -17,7 +17,7 @@ import pandas as pd
 
 # TODO: WORKSPACE is anchored to the CWD where the CLI launches, so the file
 # list the agent sees shifts depending on where you run from. Consider pinning
-# to PROJ_ROOT (from config.paths) so the workspace is stable regardless of CWD.
+# to PROJ_ROOT (from hermes.paths) so the workspace is stable regardless of CWD.
 # REVIEW , so this should be able to read files from any directory it is launched from. Need to make hermes launchable from anywhere
 WORKSPACE = Path(".").resolve()
 #allow file system to reach the project's parent directory

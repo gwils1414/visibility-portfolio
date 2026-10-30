@@ -6,7 +6,7 @@ import tempfile
 import os
 from typing import Literal
 from pydantic import BaseModel
-from config.paths import PROJ_ROOT
+from hermes.paths import PROJ_ROOT
 
 import logging
 from hermes.logs.logging_helper import log
