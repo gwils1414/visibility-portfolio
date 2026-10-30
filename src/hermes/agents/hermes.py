@@ -16,7 +16,7 @@ from hermes.agents.obsidian_sub_agent import obsidian_agent
 from hermes.agents.web_search_agent import web_search_agent
 from hermes.tools.spin_up_sub_agent import sub_agent
 import fastmcp
-from config.paths import PROJ_ROOT
+from hermes.paths import PROJ_ROOT
 from rich.console import Console
 
 import logging

@@ -225,7 +225,7 @@ def get_hermes_instructions():
       and only has `pandas`, `numpy`, and `plotly` installed — no
       network, no other project files. Skip validation for:
         - code that imports from the rest of the project
-          (`from hermes.x import y`, `from config.paths import ...`)
+          (`from hermes.x import y`, `from hermes.paths import ...`)
         - code that reads or writes workspace files outside `output/`
         - code that depends on packages beyond pandas / numpy / plotly
       In those cases route directly to `call_bash_agent` and tell the

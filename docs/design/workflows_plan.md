@@ -54,7 +54,7 @@ workflow: "research_and_report"
 step 1 | search_web   | {"query": "AI trends 2026"}
 step 2 | ask_hermes   | {"prompt": "summarize this into key points: $step_1.output"}
 step 3 | generate_pdf | {"title": "AI Report", "content": "$step_2.output"}
-step 4 | send_email   | {"to": "garett@arete.com", "attachment": "$step_3.output"}
+step 4 | send_email   | {"to": "you@example.com", "attachment": "$step_3.output"}
 ```
 
 ---

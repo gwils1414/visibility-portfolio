@@ -221,9 +221,13 @@ __marimo__/
 #Mac
 .DS_Store
 
-#
-/sandbox/agent_script.py
-/sandbox/output/
+# PCE sandbox: the script is rewritten on every run, output/ holds generated files
+src/hermes/sandbox/agent_script.py
+src/hermes/sandbox/output/
+
+# Local scratch: notebooks and in-flight design notes
+notebooks/
+src/hermes/docs/
 
 #
 .infisical.json
