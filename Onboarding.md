@@ -136,6 +136,7 @@ Built-in keywords at the prompt (not slash commands — they're matched before t
 | [src/hermes/mcps/](src/hermes/mcps/) | FastMCP servers exposed to sub-agents as MCP toolsets | [notion_mcp.py](src/hermes/mcps/notion_mcp.py) — currently the only one wired up |
 | [src/hermes/evals/](src/hermes/evals/) | Inline eval judge that runs after every response | [inline_evals.py](src/hermes/evals/inline_evals.py) |
 | [src/hermes/system_prompts/](src/hermes/system_prompts/), [src/hermes/instructions/](src/hermes/instructions/) | The actual text fed to each agent. Two-file split: "system prompt" is identity/role, "instructions" is behavior. Each sub-agent that has its own prompts (hermes, bash, pce, obsidian) gets a pair of files here. | Open whichever agent you're touching — they're plain Python returning long strings |
+| [docs/design/](docs/design/) | Design notes and plans: the Postgres decision, workflow system, reflective feedback and fine-tuning loops. `archived/` holds plans that have shipped. | [posgres_transition.md](docs/design/archived/posgres_transition.md), [workflows_plan.md](docs/design/workflows_plan.md) |
 | [src/hermes/sandbox/](src/hermes/sandbox/) | Mount root for the PCE Docker container — source mounted read-only, `output/` writable. Generated charts/CSVs land here. | — |
 | [src/docker/](src/docker/) | Dockerfiles for the `python-sandbox` image (PCE) and the pipeline image. | [src/docker/pce/Dockerfile](src/docker/pce/Dockerfile) |
 | [src/hermes/paths.py](src/hermes/paths.py) | The non-env constants: `PROJ_ROOT` (the `src/` directory) and `TODAY`. Used by anything that needs a path relative to the source root. | One line, but get the layering right |
@@ -189,7 +190,7 @@ This is "artificial narrow intelligence" by convention — each agent is too con
 
 **Data layer.** Source APIs (GitHub, Notion, the local Obsidian vault) are *not* hit on every chat turn. Instead, [db/pipeline.py](src/hermes/db/pipeline.py) runs three dlt sources daily — each writes into its own schema in the local `hermes` Postgres database. Tools like [query_commit_details](src/hermes/tools/query_github_stats.py#L7) and [query_notion_tasks](src/hermes/tools/query_notion_tasks.py#L6) then `pd.read_sql` from that warehouse. This decouples agent latency from upstream API rate limits and lets historical data accrue. The Obsidian embeddings pipeline is different in flavor — it embeds every markdown file's `description:` frontmatter using Qwen3-Embedding-0.6B locally and stores the vectors as JSONB. Semantic similarity at runtime is sklearn cosine over the unpacked vectors (see [obsidian_skills.py:53](src/hermes/tools/obsidian_skills.py#L53)). There is a TODO at [pipeline.py:131](src/hermes/db/pipeline.py#L131) to migrate to native `pgvector` columns once the extension is enabled.
 
-**Why Postgres and not DuckDB / SQLite.** This was DuckDB until recently. Short version: DuckDB is OLAP (great for ad-hoc analytics, bad at frequent small writes), SQLite serializes writes, Postgres handles concurrent writers with row-level locking. The moment sub-agents fan out in parallel and each logs to short-term memory, the single-writer model breaks.
+**Why Postgres and not DuckDB / SQLite.** This was DuckDB until recently. The rationale for moving is in [posgres_transition.md](docs/design/archived/posgres_transition.md) — short version: DuckDB is OLAP (great for ad-hoc analytics, bad at frequent small writes), SQLite serializes writes, Postgres handles concurrent writers with row-level locking. The moment sub-agents fan out in parallel and each logs to short-term memory, the single-writer model breaks.
 
 ---
 
@@ -283,7 +284,7 @@ The model on the inline eval judge ([evals/inline_evals.py:12](src/hermes/evals/
 
 Three things fire around every assistant response, all written to Postgres:
 
-**Inline evals.** After the stream closes, [chat.py:305](src/hermes/cli/chat.py#L305) calls a judge model to score the response on two axes (`hallucination`, `factualness`, both 0–1). The scores render as colored progress bars in a panel under the response — green ≥0.8, yellow 0.5–0.8, red <0.5, thresholds at [chat.py:53](src/hermes/cli/chat.py#L53). Scores are *not* persisted yet; that lands when the reflective fine-tune loop is built.
+**Inline evals.** After the stream closes, [chat.py:305](src/hermes/cli/chat.py#L305) calls a judge model to score the response on two axes (`hallucination`, `factualness`, both 0–1). The scores render as colored progress bars in a panel under the response — green ≥0.8, yellow 0.5–0.8, red <0.5, thresholds at [chat.py:53](src/hermes/cli/chat.py#L53). Scores are *not* persisted yet; that lands when the reflective fine-tune loop is built ([reflective_feedback.md](docs/design/reflective_feedback.md)).
 
 **Short-term memory.** Each turn writes a row to the `short_term_memory` table — session UUID, user prompt, response, tool-call names, and the full message-history JSON ([chat.py:298](src/hermes/cli/chat.py#L298)). [ShortTermMemory](src/hermes/db/memory/short_term.py#L21) lives in its own schema so concurrent writes don't fight the warehouse tables. The plan in the file's tail comments: a weekly LLM-judge job reads these rows and distills durable preferences into `MEMORY/` files via the obsidian sub-agent.
 
@@ -335,7 +336,7 @@ Worth knowing what to trust:
 | `notion_sub_agent` prompts | Same issue as `morning_briefing` — empty strings at [notion_sub_agent.py:32-33](src/hermes/agents/notion_sub_agent.py#L32). |
 | HTML "newspaper" morning brief | Not built |
 | Resend email tool | Placeholder at [tools/resend.py](src/hermes/tools/resend.py) |
-| Workflow execution | Not built |
+| Workflow execution | Not built — design in [workflows_plan.md](docs/design/workflows_plan.md) |
 | `workflows` keyword in the CLI | Reserved — the keyword exists in the banner but isn't wired to a handler yet |
 
 ---
